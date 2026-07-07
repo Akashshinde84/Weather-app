@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather App</title>
+    <script>
+        (() => {
+            const savedTheme = localStorage.getItem('weather-theme');
+            const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            document.documentElement.dataset.theme = savedTheme || preferredTheme;
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""
+    >
+</head>
+<body>
+    <div class="page-shell">
+        <nav class="navbar" aria-label="Primary">
+            <a class="brand" href="#" aria-label="Weather App home">
+                <span class="brand-mark" aria-hidden="true">&#127780;&#65039;</span>
+                <span>Weather App</span>
+            </a>
+            <div class="nav-actions" aria-label="Weather tools">
+                <span class="nav-pill">Live weather</span>
+                <span class="nav-pill">Maps</span>
+                <span class="nav-pill">Places</span>
+                <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+                    <span class="theme-toggle-icon" aria-hidden="true">☾</span>
+                    <span class="theme-toggle-text">Dark</span>
+                </button>
+            </div>
+        </nav>
+
+        <main class="hero">
+            <section class="hero-copy" aria-labelledby="appTitle">
+                <span class="eyebrow">Forecasts, places, and current location</span>
+                <h1 id="appTitle">Weather that feels calm, clear, and quick.</h1>
+                <p class="hero-subtitle">Search a city, pick a place on the map, or use your current location to get live conditions.</p>
+
+                <div class="search-panel glass-panel" aria-label="City weather search">
+                    <div class="search-box">
+                        <label class="sr-only" for="city">City name</label>
+                        <input type="text" id="city" placeholder="Enter city name" value="kerala">
+                        <button id="getWeather" type="button">Get Weather</button>
+                    </div>
+
+                    <div id="loading" class="loading hidden" aria-hidden="true">
+                        <div class="loader-orbit" aria-hidden="true">
+                            <span></span>
+                        </div>
+                        <div class="loading-text">Fetching weather...</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="weather-info glass-panel" id="weatherInfo" aria-live="polite">
+                <div class="empty-weather">
+                    <span class="empty-icon" aria-hidden="true">&#9729;&#65039;</span>
+                    <h2>Start with a city</h2>
+                    <p>Your weather details will appear here.</p>
+                </div>
+            </section>
+        </main>
+
+        <section class="map-card glass-panel" aria-label="Map and place search">
+            <div class="map-card-header">
+                <div>
+                    <span class="eyebrow">Explore nearby</span>
+                    <h2>Map search</h2>
+                </div>
+                <button id="useCurrentLocation" type="button">Use Current Location</button>
+            </div>
+
+            <div class="map-controls">
+                <label class="sr-only" for="placeQuery">Search a place</label>
+                <input type="text" id="placeQuery" placeholder="Search a place (e.g. Taj Mahal)">
+                <button id="searchPlace" type="button">Search</button>
+            </div>
+
+            <div id="map" class="map" aria-label="Map"></div>
+            <div id="places" class="places" aria-live="polite"></div>
+        </section>
+    </div>
+
+    <script
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""
+    ></script>
+    <script src="script.js"></script>
+</body>
+</html>
