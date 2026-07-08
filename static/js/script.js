@@ -61,6 +61,8 @@ const DEFAULT_CITY_SUGGESTIONS = [
     'Seattle', 'Boston', 'Miami', 'Denver', 'Atlanta', 'London', 'Paris', 'Tokyo',
     'Singapore', 'Dubai', 'Sydney', 'Toronto', 'Berlin', 'Rome', 'Madrid', 'Amsterdam'
 ];
+const OPEN_METEO_GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
+const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const RADAR_LAYERS = {
     rain: { label: 'Rain', paneClass: 'radar-rain' },
     cloud: { label: 'Cloud', paneClass: 'radar-cloud' },
@@ -2483,6 +2485,166 @@ function renderDailyForecastError(message) {
     grid.innerHTML = `<div class="daily-status daily-error">${escapeHtml(message)}</div>`;
 }
 
+function openMeteoCondition(code) {
+    const weatherCode = Number(code);
+
+    if (weatherCode === 0) return { description: 'Clear sky', icon: 'sunny' };
+    if ([1, 2].includes(weatherCode)) return { description: 'Partly cloudy', icon: 'cloudy' };
+    if (weatherCode === 3) return { description: 'Overcast', icon: 'cloudy' };
+    if ([45, 48].includes(weatherCode)) return { description: 'Fog', icon: 'mist' };
+    if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(weatherCode)) {
+        return { description: 'Rain likely', icon: 'rain' };
+    }
+    if ([71, 73, 75, 77, 85, 86].includes(weatherCode)) return { description: 'Snow', icon: 'snow' };
+    if ([95, 96, 99].includes(weatherCode)) return { description: 'Thunderstorm', icon: 'storm' };
+
+    return { description: 'Mixed conditions', icon: 'cloudy' };
+}
+
+function getOpenMeteoValue(values, index) {
+    return Array.isArray(values) && index < values.length ? values[index] : null;
+}
+
+function averageNumbers(values) {
+    const numbers = values.map(Number).filter(Number.isFinite);
+    if (!numbers.length) return null;
+    return Math.round(numbers.reduce((sum, value) => sum + value, 0) / numbers.length);
+}
+
+async function geocodeCityWithOpenMeteo(city, signal) {
+    const query = new URLSearchParams({
+        name: city,
+        count: '1',
+        language: 'en',
+        format: 'json'
+    });
+    const data = await fetchJson(`${OPEN_METEO_GEOCODING_URL}?${query.toString()}`, { signal }, 0);
+    const place = data.results?.[0];
+
+    if (!place) throw new Error('City not found');
+
+    return {
+        name: place.name,
+        country: place.country_code || place.country || '',
+        lat: place.latitude,
+        lng: place.longitude,
+        timezone: place.timezone
+    };
+}
+
+async function fetchOpenMeteoForecast(lat, lng, signal) {
+    const query = new URLSearchParams({
+        latitude: lat,
+        longitude: lng,
+        current: 'temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,cloud_cover,pressure_msl,wind_speed_10m',
+        hourly: 'temperature_2m,relative_humidity_2m,precipitation_probability,wind_speed_10m,weather_code',
+        daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset',
+        forecast_days: '7',
+        timezone: 'auto',
+        wind_speed_unit: 'ms'
+    });
+
+    return fetchJson(`${OPEN_METEO_FORECAST_URL}?${query.toString()}`, { signal }, 0);
+}
+
+function normalizeOpenMeteoWeather(payload, place = {}) {
+    const current = payload.current || {};
+    const condition = openMeteoCondition(current.weather_code);
+
+    return {
+        name: place.name || 'Current location',
+        country: place.country || '',
+        temperature: current.temperature_2m,
+        feels_like: current.apparent_temperature,
+        humidity: current.relative_humidity_2m,
+        pressure: current.pressure_msl,
+        wind_speed: current.wind_speed_10m,
+        visibility: null,
+        sunrise: Date.parse(payload.daily?.sunrise?.[0]) / 1000 || null,
+        sunset: Date.parse(payload.daily?.sunset?.[0]) / 1000 || null,
+        timezone: 0,
+        clouds: current.cloud_cover,
+        description: condition.description,
+        icon: condition.icon,
+        summary: `${condition.description} with a temperature near ${formatNumber(current.temperature_2m)} C, feeling like ${formatNumber(current.apparent_temperature)} C.`,
+        lat: payload.latitude ?? place.lat,
+        lng: payload.longitude ?? place.lng,
+        air_quality: null
+    };
+}
+
+function normalizeOpenMeteoHourly(payload) {
+    const hourly = payload.hourly || {};
+    const times = hourly.time || [];
+    const now = Date.now();
+    const startIndex = Math.max(0, times.findIndex((time) => Date.parse(time) >= now));
+    const first = startIndex === -1 ? 0 : startIndex;
+
+    return times.slice(first, first + 24).map((time, offset) => {
+        const index = first + offset;
+        const condition = openMeteoCondition(getOpenMeteoValue(hourly.weather_code, index));
+
+        return {
+            time,
+            temperature: getOpenMeteoValue(hourly.temperature_2m, index),
+            rain_chance: getOpenMeteoValue(hourly.precipitation_probability, index),
+            wind_speed: Number(getOpenMeteoValue(hourly.wind_speed_10m, index)) * 3.6,
+            humidity: getOpenMeteoValue(hourly.relative_humidity_2m, index),
+            weather_code: getOpenMeteoValue(hourly.weather_code, index),
+            description: condition.description,
+            icon: condition.icon
+        };
+    });
+}
+
+function normalizeOpenMeteoDaily(payload) {
+    const daily = payload.daily || {};
+    const hourly = payload.hourly || {};
+
+    return (daily.time || []).slice(0, 7).map((date, index) => {
+        const high = getOpenMeteoValue(daily.temperature_2m_max, index);
+        const low = getOpenMeteoValue(daily.temperature_2m_min, index);
+        const condition = openMeteoCondition(getOpenMeteoValue(daily.weather_code, index));
+        const humidityValues = (hourly.time || [])
+            .map((time, hourlyIndex) => String(time).startsWith(date) ? getOpenMeteoValue(hourly.relative_humidity_2m, hourlyIndex) : null)
+            .filter((value) => value != null);
+
+        return {
+            date,
+            temperature: Number.isFinite(Number(high)) && Number.isFinite(Number(low)) ? (Number(high) + Number(low)) / 2 : null,
+            high,
+            low,
+            rain_chance: getOpenMeteoValue(daily.precipitation_probability_max, index),
+            wind_speed: Number(getOpenMeteoValue(daily.wind_speed_10m_max, index)) * 3.6,
+            humidity: averageNumbers(humidityValues),
+            weather_code: getOpenMeteoValue(daily.weather_code, index),
+            description: condition.description,
+            icon: condition.icon
+        };
+    });
+}
+
+async function fetchStaticWeatherFallback(params, signal) {
+    let place;
+
+    if (params.get('city')) {
+        place = await geocodeCityWithOpenMeteo(params.get('city'), signal);
+    } else {
+        const lat = Number(params.get('lat'));
+        const lng = Number(params.get('lng'));
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Provide either city or location.');
+        place = { name: 'Current location', country: '', lat, lng };
+    }
+
+    const forecast = await fetchOpenMeteoForecast(place.lat, place.lng, signal);
+
+    return {
+        weather: normalizeOpenMeteoWeather(forecast, place),
+        hourly: normalizeOpenMeteoHourly(forecast),
+        daily: normalizeOpenMeteoDaily(forecast)
+    };
+}
+
 async function fetchHourlyForecast(lat, lng) {
     const latitude = Number(lat);
     const longitude = Number(lng);
@@ -2503,7 +2665,14 @@ async function fetchHourlyForecast(lat, lng) {
 
         renderForecastCards(data.forecast);
     } catch (error) {
-        if (error.name !== 'AbortError') renderForecastError(error.message);
+        if (error.name !== 'AbortError') {
+            try {
+                const data = await fetchOpenMeteoForecast(latitude, longitude, forecastRequestController.signal);
+                renderForecastCards(normalizeOpenMeteoHourly(data));
+            } catch (fallbackError) {
+                if (fallbackError.name !== 'AbortError') renderForecastError(fallbackError.message);
+            }
+        }
     }
 }
 
@@ -2527,7 +2696,14 @@ async function fetchDailyForecast(lat, lng) {
 
         renderDailyForecastCards(data.forecast);
     } catch (error) {
-        if (error.name !== 'AbortError') renderDailyForecastError(error.message);
+        if (error.name !== 'AbortError') {
+            try {
+                const data = await fetchOpenMeteoForecast(latitude, longitude, dailyForecastRequestController.signal);
+                renderDailyForecastCards(normalizeOpenMeteoDaily(data));
+            } catch (fallbackError) {
+                if (fallbackError.name !== 'AbortError') renderDailyForecastError(fallbackError.message);
+            }
+        }
     }
 }
 
@@ -2584,8 +2760,26 @@ async function fetchWeatherFromApi(params, label) {
         }
         return data.weather;
     } catch (error) {
-        if (error.name !== 'AbortError') {
-            showWeatherError(error.message, () => fetchWeatherFromApi(params, label));
+        if (error.name === 'AbortError') {
+            return null;
+        }
+
+        try {
+            const fallback = await fetchStaticWeatherFallback(params, weatherRequestController.signal);
+            renderWeather(fallback.weather, label);
+            renderForecastCards(fallback.hourly);
+            renderDailyForecastCards(fallback.daily);
+            setMarker(fallback.weather.lat, fallback.weather.lng, `${fallback.weather.name}, ${fallback.weather.country}`, {
+                type: 'weather',
+                subtitle: 'Live weather',
+                temperature: fallback.weather.temperature,
+                description: fallback.weather.description
+            });
+            return fallback.weather;
+        } catch (fallbackError) {
+            if (fallbackError.name !== 'AbortError') {
+                showWeatherError(fallbackError.message || error.message, () => fetchWeatherFromApi(params, label));
+            }
         }
         return null;
     } finally {

@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'weather-app-v3';
+const CACHE_VERSION = 'weather-app-v4';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const API_CACHE = `${CACHE_VERSION}-api`;
