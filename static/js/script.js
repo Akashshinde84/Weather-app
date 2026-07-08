@@ -63,6 +63,16 @@ const DEFAULT_CITY_SUGGESTIONS = [
 ];
 const OPEN_METEO_GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const IS_GITHUB_PAGES = window.location.hostname.endsWith('github.io');
+const STATIC_LOCATION_ALIASES = {
+    kerala: {
+        name: 'Kerala',
+        country: 'IN',
+        lat: 10.8505,
+        lng: 76.2711,
+        timezone: 'Asia/Kolkata'
+    }
+};
 const RADAR_LAYERS = {
     rain: { label: 'Rain', paneClass: 'radar-rain' },
     cloud: { label: 'Cloud', paneClass: 'radar-cloud' },
@@ -2512,9 +2522,12 @@ function averageNumbers(values) {
 }
 
 async function geocodeCityWithOpenMeteo(city, signal) {
+    const alias = STATIC_LOCATION_ALIASES[String(city).trim().toLowerCase()];
+    if (alias) return alias;
+
     const query = new URLSearchParams({
         name: city,
-        count: '1',
+        count: '10',
         language: 'en',
         format: 'json'
     });
@@ -2743,6 +2756,20 @@ async function fetchWeatherFromApi(params, label) {
         usingRealAiInsights = false; // Reset the AI insights flag
         currentHourlyForecast = [];
         currentDailyForecast = [];
+
+        if (IS_GITHUB_PAGES) {
+            const fallback = await fetchStaticWeatherFallback(params, weatherRequestController.signal);
+            renderWeather(fallback.weather, label);
+            renderForecastCards(fallback.hourly);
+            renderDailyForecastCards(fallback.daily);
+            setMarker(fallback.weather.lat, fallback.weather.lng, `${fallback.weather.name}, ${fallback.weather.country}`, {
+                type: 'weather',
+                subtitle: 'Live weather',
+                temperature: fallback.weather.temperature,
+                description: fallback.weather.description
+            });
+            return fallback.weather;
+        }
 
         const data = await fetchJson(`/api/weather?${params.toString()}`, {
             signal: weatherRequestController.signal

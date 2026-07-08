@@ -1,21 +1,18 @@
-const CACHE_VERSION = 'weather-app-v4';
+const CACHE_VERSION = 'weather-app-v5';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 
 const APP_SHELL = [
-    '/',
-    '/offline.html',
-    '/manifest.webmanifest',
-    '/static/css/styles.css',
-    '/static/js/script.js',
-    '/static/js/auth.js',
-    '/static/js/user-data.js',
-    '/static/js/pwa.js',
-    '/static/js/lazy-loader.js',
-    '/static/icons/icon-192.svg',
-    '/static/icons/icon-512.svg',
-    '/static/icons/icon-maskable.svg'
+    './',
+    './offline.html',
+    './manifest.webmanifest',
+    './styles.css',
+    './script.js',
+    './auth.js',
+    './user-data.js',
+    './pwa.js',
+    './lazy-loader.js'
 ];
 
 const PUBLIC_API_PREFIXES = [
@@ -65,7 +62,7 @@ function isPrivateApiRequest(url) {
 }
 
 function isStaticAsset(url) {
-    return url.pathname.startsWith('/static/');
+    return /\.(?:css|js|png|jpg|jpeg|webp|svg|ico|webmanifest|html)$/i.test(url.pathname);
 }
 
 function isNavigationRequest(request) {
@@ -136,7 +133,7 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             networkFirst(request, APP_SHELL_CACHE).catch(async () => {
                 const cachedHome = await caches.match('/');
-                return cachedHome || caches.match('/offline.html');
+                return cachedHome || caches.match('./') || caches.match('./offline.html');
             })
         );
         return;
@@ -152,7 +149,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    if (isStaticAsset(url) || url.pathname === '/manifest.webmanifest' || url.pathname === '/sw.js') {
+    if (isStaticAsset(url) || url.pathname.endsWith('/manifest.webmanifest') || url.pathname.endsWith('/sw.js')) {
         event.respondWith(staleWhileRevalidate(request, APP_SHELL_CACHE));
         return;
     }

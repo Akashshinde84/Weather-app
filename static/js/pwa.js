@@ -21,7 +21,8 @@
         if (!('serviceWorker' in navigator)) return;
 
         try {
-            await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+            const swUrl = new URL('sw.js', window.location.href);
+            await navigator.serviceWorker.register(swUrl.href, { scope: './' });
         } catch (error) {
             console.warn('Service worker registration failed:', error);
         }
