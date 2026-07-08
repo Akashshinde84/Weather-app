@@ -3,7 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Weather App</title>
+    <meta name="description" content="Live weather, maps, radar, forecasts, alerts, travel guidance, and personalized insights for any city.">
+    <meta name="robots" content="index, follow">
+    <meta name="theme-color" content="#0f8bdc">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Weather App">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Weather App - Live Forecasts and Radar">
+    <meta property="og:description" content="Search any city for live weather, radar layers, alerts, AI summaries, and travel guidance.">
+    <meta property="og:url" content="{{ request.url_root.rstrip('/') }}/">
+    <meta property="og:site_name" content="Weather App">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Weather App">
+    <meta name="twitter:description" content="Live weather, radar, forecasts, and personalized guidance.">
+    <link rel="canonical" href="{{ request.url_root.rstrip('/') }}/">
+    <title>Weather App - Live Forecasts, Radar, and Maps</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.svg') }}">
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+    <link rel="dns-prefetch" href="https://unpkg.com">
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <script>
         (() => {
             const savedTheme = localStorage.getItem('weather-theme');
@@ -13,16 +35,27 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" href="{{ url_for('static', filename='css/styles.css') }}" as="style">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <link
-        rel="stylesheet"
-        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-        crossorigin=""
-    >
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Weather App",
+        "description": "Live weather forecasts, radar, maps, alerts, and personalized guidance.",
+        "applicationCategory": "WeatherApplication",
+        "operatingSystem": "Web",
+        "url": "{{ request.url_root.rstrip('/') }}/"
+    }
+    </script>
 </head>
 <body>
+    <a class="skip-link" href="#mainContent">Skip to main content</a>
+    <div id="offlineBanner" class="offline-banner hidden" role="status" aria-live="polite" aria-hidden="true">
+        <span class="offline-banner-icon" aria-hidden="true">&#128246;</span>
+        <span>You are offline. Cached weather and pages remain available.</span>
+    </div>
     <div class="page-shell">
         <nav class="navbar" aria-label="Primary">
             <a class="brand" href="#" aria-label="Weather App home">
@@ -33,24 +66,52 @@
                 <span class="nav-pill">Live weather</span>
                 <span class="nav-pill">Maps</span>
                 <span class="nav-pill">Places</span>
+                <div id="navAuth" class="nav-auth" aria-label="Account"></div>
+                <button id="installApp" class="text-button install-app-button hidden" type="button" aria-hidden="true">Install app</button>
                 <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
-                    <span class="theme-toggle-icon" aria-hidden="true">â˜¾</span>
+                    <span class="theme-toggle-icon" aria-hidden="true">&#9790;</span>
                     <span class="theme-toggle-text">Dark</span>
                 </button>
             </div>
         </nav>
 
-        <main class="hero">
+        <main id="mainContent" class="hero">
             <section class="hero-copy" aria-labelledby="appTitle">
                 <span class="eyebrow">Forecasts, places, and current location</span>
-                <h1 id="appTitle">Weather that feels calm, clear, and quick.</h1>
-                <p class="hero-subtitle">Search a city, pick a place on the map, or use your current location to get live conditions.</p>
+                <h1 id="appTitle">A richer read on the weather right now.</h1>
+                <p class="hero-subtitle">Search a city, pick a place on the map, or use your current location to see detailed live conditions at a glance.</p>
 
                 <div class="search-panel glass-panel" aria-label="City weather search">
                     <div class="search-box">
                         <label class="sr-only" for="city">City name</label>
-                        <input type="text" id="city" placeholder="Enter city name" value="kerala">
+                        <div class="search-input-wrap">
+                            <input
+                                type="text"
+                                id="city"
+                                placeholder="Enter city name"
+                                value="kerala"
+                                autocomplete="off"
+                                role="combobox"
+                                aria-autocomplete="list"
+                                aria-expanded="false"
+                                aria-controls="searchSuggestions"
+                            >
+                            <div id="searchSuggestions" class="search-suggestions hidden" role="listbox" aria-label="City suggestions"></div>
+                        </div>
                         <button id="getWeather" type="button">Get Weather</button>
+                    </div>
+
+                    <div class="search-assist" aria-label="Search helpers">
+                        <div class="search-assist-header">
+                            <span>Suggestions</span>
+                            <button id="clearSearchHistory" class="text-button" type="button">Clear history</button>
+                        </div>
+                        <div id="quickSuggestions" class="search-chip-row" aria-label="Suggested cities"></div>
+                        <div id="recentSearches" class="search-chip-row" aria-label="Recent searches"></div>
+                        <div class="favorite-row">
+                            <span class="assist-label">Favorites</span>
+                            <div id="favoriteCities" class="search-chip-row" aria-label="Favorite cities"></div>
+                        </div>
                     </div>
 
                     <div id="loading" class="loading hidden" aria-hidden="true">
@@ -86,17 +147,117 @@
                 <button id="searchPlace" type="button">Search</button>
             </div>
 
+            <div class="radar-panel" aria-label="Weather radar controls">
+                <div class="radar-panel-header">
+                    <div>
+                        <span class="eyebrow">Weather radar</span>
+                        <h3>Radar layers</h3>
+                    </div>
+                    <button id="radarPlayPause" class="text-button radar-play" type="button" aria-pressed="true">Pause animation</button>
+                </div>
+                <div class="radar-layer-controls" role="group" aria-label="Radar layer">
+                    <button class="radar-layer-button is-active" type="button" data-radar-layer="rain">Rain</button>
+                    <button class="radar-layer-button" type="button" data-radar-layer="cloud">Cloud</button>
+                    <button class="radar-layer-button" type="button" data-radar-layer="wind">Wind</button>
+                    <button class="radar-layer-button" type="button" data-radar-layer="temperature">Temperature</button>
+                </div>
+                <div class="radar-settings">
+                    <div class="radar-setting">
+                        <label for="radarOpacity">Opacity</label>
+                        <input id="radarOpacity" type="range" min="20" max="95" value="65" aria-valuetext="65%">
+                    </div>
+                    <div class="radar-setting">
+                        <label for="radarTimeline">Timeline</label>
+                        <input id="radarTimeline" type="range" min="0" max="11" value="11" aria-label="Radar timeline">
+                    </div>
+                    <span id="radarStatus" class="radar-status">Rain radar active</span>
+                </div>
+                <div id="radarLegend" class="radar-legend" data-radar-layer="rain" aria-hidden="true">
+                    <span class="radar-legend-label">Light</span>
+                    <span class="radar-legend-bar"></span>
+                    <span class="radar-legend-label">Heavy</span>
+                </div>
+            </div>
+
             <div id="map" class="map" aria-label="Map"></div>
             <div id="places" class="places" aria-live="polite"></div>
         </section>
     </div>
 
-    <script
-        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-        crossorigin=""
-    ></script>
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <div id="authModal" class="auth-modal hidden" aria-hidden="true" aria-labelledby="authModalTitle" aria-modal="true" role="dialog">
+        <div class="auth-modal-backdrop" data-close-auth></div>
+        <div class="auth-modal-panel glass-panel">
+            <button class="auth-modal-close text-button" type="button" data-close-auth aria-label="Close">Close</button>
+            <span class="eyebrow">Account</span>
+            <h2 id="authModalTitle">Welcome back</h2>
+            <div class="auth-tabs" role="tablist" aria-label="Authentication">
+                <button class="auth-tab is-active" type="button" data-auth-tab="login" aria-selected="true">Login</button>
+                <button class="auth-tab" type="button" data-auth-tab="signup" aria-selected="false">Sign up</button>
+            </div>
+
+            <div data-auth-view="login">
+                <form id="loginForm" class="auth-form">
+                    <div class="auth-field">
+                        <label for="loginEmail">Email</label>
+                        <input id="loginEmail" type="email" autocomplete="email" required>
+                    </div>
+                    <div class="auth-field">
+                        <label for="loginPassword">Password</label>
+                        <input id="loginPassword" type="password" autocomplete="current-password" required>
+                    </div>
+                    <button type="submit">Login</button>
+                    <button id="showForgotPassword" class="text-button auth-inline-link" type="button">Forgot password?</button>
+                </form>
+            </div>
+
+            <div class="hidden" data-auth-view="signup">
+                <form id="signupForm" class="auth-form">
+                    <div class="auth-field">
+                        <label for="signupName">Full name</label>
+                        <input id="signupName" type="text" autocomplete="name" required>
+                    </div>
+                    <div class="auth-field">
+                        <label for="signupEmail">Email</label>
+                        <input id="signupEmail" type="email" autocomplete="email" required>
+                    </div>
+                    <div class="auth-field">
+                        <label for="signupPassword">Password</label>
+                        <input id="signupPassword" type="password" minlength="8" autocomplete="new-password" required>
+                    </div>
+                    <div class="auth-field">
+                        <label for="signupPasswordConfirm">Confirm password</label>
+                        <input id="signupPasswordConfirm" type="password" minlength="8" autocomplete="new-password" required>
+                    </div>
+                    <button type="submit">Create account</button>
+                </form>
+            </div>
+
+            <div class="hidden" data-auth-view="forgot">
+                <form id="forgotPasswordForm" class="auth-form">
+                    <p class="auth-card-subtitle">Enter your email and we will send reset instructions.</p>
+                    <div class="auth-field">
+                        <label for="forgotEmail">Email</label>
+                        <input id="forgotEmail" type="email" autocomplete="email" required>
+                    </div>
+                    <button type="submit">Send reset link</button>
+                    <button id="backToLogin" class="text-button auth-inline-link" type="button">Back to login</button>
+                </form>
+            </div>
+
+            <div class="auth-divider"><span>or</span></div>
+            <button id="googleLoginButton" class="google-login-button hidden" type="button">
+                <span aria-hidden="true">G</span>
+                Continue with Google
+            </button>
+            <p id="authMessage" class="auth-message hidden" role="status"></p>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/lazy-loader.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/user-data.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/auth.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/pwa.js') }}" defer></script>
 </body>
 </html>
 

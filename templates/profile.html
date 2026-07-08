@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0f8bdc">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <title>Profile - Weather App</title>
+    <script>
+        (() => {
+            const savedTheme = localStorage.getItem('weather-theme');
+            const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            document.documentElement.dataset.theme = savedTheme || preferredTheme;
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="page-shell profile-page-shell">
+        <nav class="navbar" aria-label="Primary">
+            <a class="brand" href="/" aria-label="Weather App home">
+                <span class="brand-mark" aria-hidden="true">&#127780;&#65039;</span>
+                <span>Weather App</span>
+            </a>
+            <div class="nav-actions" aria-label="Account">
+                <a class="nav-pill nav-link" href="/">Home</a>
+                <button id="logoutButton" class="text-button" type="button">Logout</button>
+            </div>
+        </nav>
+
+        <main class="profile-page glass-panel">
+            <div class="profile-header">
+                <div class="profile-avatar-wrap">
+                    {% if user.avatar_url %}
+                    <img src="{{ user.avatar_url }}" alt="" class="profile-avatar">
+                    {% else %}
+                    <div class="profile-avatar profile-avatar-fallback" aria-hidden="true">{{ user.name[:1] | upper }}</div>
+                    {% endif %}
+                </div>
+                <div>
+                    <span class="eyebrow">Your account</span>
+                    <h1>Profile</h1>
+                    <p class="profile-subtitle">Manage your weather preferences and account details.</p>
+                </div>
+            </div>
+
+            <form id="profileForm" class="profile-form" novalidate>
+                <div class="profile-field">
+                    <label for="profileName">Full name</label>
+                    <input id="profileName" name="name" type="text" value="{{ user.name }}" required>
+                </div>
+                <div class="profile-field">
+                    <label for="profileEmail">Email</label>
+                    <input id="profileEmail" type="email" value="{{ user.email }}" disabled>
+                </div>
+                <div class="profile-field">
+                    <label for="profileCity">Default city</label>
+                    <input id="profileCity" name="default_city" type="text" value="{{ user.default_city or '' }}" placeholder="e.g. Kerala">
+                </div>
+                <div class="profile-meta">
+                    <span>Signed in with {{ user.provider }}</span>
+                    <span>Member since {{ user.created_at[:10] }}</span>
+                </div>
+                <div class="profile-actions">
+                    <button type="submit">Save profile</button>
+                    <a class="text-button profile-home-link" href="/">Back to weather</a>
+                </div>
+                <p id="profileMessage" class="auth-message hidden" role="status"></p>
+            </form>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/user-data.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/pwa.js') }}"></script>
+</body>
+</html>

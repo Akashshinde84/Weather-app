@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="Weather App">
+  <defs>
+    <linearGradient id="sky" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7fd1ff"/>
+      <stop offset="100%" stop-color="#0f8bdc"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="42" fill="url(#sky)"/>
+  <circle cx="132" cy="58" r="28" fill="#ffe08a"/>
+  <path d="M48 118c0-22 18-40 40-40 8 0 15 2 21 6 6-18 23-31 43-31 26 0 47 21 47 47 0 3 0 6-1 9H48z" fill="#ffffff" opacity="0.95"/>
+  <path d="M62 126h68" stroke="#0f8bdc" stroke-width="8" stroke-linecap="round"/>
+  <path d="M74 142h20M98 142h20" stroke="#ffffff" stroke-width="6" stroke-linecap="round" opacity="0.9"/>
+</svg>
