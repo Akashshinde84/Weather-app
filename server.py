@@ -210,7 +210,7 @@ def create_app() -> Flask:
         params = {
             "latitude": lat,
             "longitude": lng,
-            "hourly": "temperature_2m,precipitation_probability,wind_speed_10m,weather_code",
+            "hourly": "temperature_2m,relative_humidity_2m,precipitation_probability,pressure_msl,wind_speed_10m,weather_code",
             "forecast_days": "2",
             "timezone": "auto",
         }
@@ -284,7 +284,7 @@ def create_app() -> Flask:
             hourly_params = {
                 "latitude": str(lat_val),
                 "longitude": str(lng_val),
-                "hourly": "temperature_2m,precipitation_probability,wind_speed_10m,weather_code",
+                "hourly": "temperature_2m,relative_humidity_2m,precipitation_probability,pressure_msl,wind_speed_10m,weather_code",
                 "forecast_days": "2",
                 "timezone": "auto",
             }
@@ -664,7 +664,9 @@ def _normalize_hourly_forecast(payload: dict[str, Any]) -> list[dict[str, Any]]:
     hourly = payload.get("hourly") or {}
     times = hourly.get("time") or []
     temperatures = hourly.get("temperature_2m") or []
+    humidity_values = hourly.get("relative_humidity_2m") or []
     rain_chances = hourly.get("precipitation_probability") or []
+    pressure_values = hourly.get("pressure_msl") or []
     wind_speeds = hourly.get("wind_speed_10m") or []
     weather_codes = hourly.get("weather_code") or []
     forecast: list[dict[str, Any]] = []
@@ -679,7 +681,9 @@ def _normalize_hourly_forecast(payload: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "time": time_value,
                 "temperature": _get_indexed(temperatures, index),
+                "humidity": _get_indexed(humidity_values, index),
                 "rain_chance": _get_indexed(rain_chances, index),
+                "pressure": _get_indexed(pressure_values, index),
                 "wind_speed": _get_indexed(wind_speeds, index),
                 "weather_code": code,
                 "description": condition["description"],

@@ -1259,7 +1259,7 @@ async function updateHourlyCharts(forecast) {
     await ensureChartJs();
     if (!window.Chart) return;
 
-    const hours = forecast.slice(0, 12);
+    const hours = forecast.slice(0, 24);
     const labels = hours.map((hour) => formatForecastTime(hour.time));
     renderChart('temperatureChart', {
         labels,
@@ -1267,6 +1267,21 @@ async function updateHourlyCharts(forecast) {
         unit: ' C',
         beginAtZero: false
     });
+    if (hours.some((hour) => Number.isFinite(Number(hour.humidity)))) {
+        renderChart('humidityChart', {
+            labels,
+            datasets: [chartDataset('Humidity', hours.map((hour) => numericOrZero(hour.humidity)), '#0ea5e9', { fill: true })],
+            unit: '%'
+        });
+    }
+    if (hours.some((hour) => Number.isFinite(Number(hour.pressure)))) {
+        renderChart('pressureChart', {
+            labels,
+            datasets: [chartDataset('Pressure', hours.map((hour) => numericOrZero(hour.pressure)), '#8b5cf6', { fill: true })],
+            unit: ' hPa',
+            beginAtZero: false
+        });
+    }
     renderChart('windChart', {
         labels,
         datasets: [chartDataset('Wind', hours.map((hour) => numericOrZero(hour.wind_speed)), '#14b8a6', { fill: true })],
@@ -1278,6 +1293,9 @@ async function updateHourlyCharts(forecast) {
         datasets: [chartDataset('Rain chance', hours.map((hour) => numericOrZero(hour.rain_chance)), '#2563eb')],
         unit: '%'
     });
+
+    const status = document.getElementById('chartStatus');
+    if (status) status.textContent = `${hours.length}h trend`;
 }
 
 async function updateDailyCharts(forecast) {
@@ -1285,12 +1303,19 @@ async function updateDailyCharts(forecast) {
     await ensureChartJs();
     if (!window.Chart) return;
 
+    if (currentHourlyForecast.some((hour) => Number.isFinite(Number(hour.humidity)))) {
+        return;
+    }
+
     const labels = forecast.map((day) => formatForecastDay(day.date));
     renderChart('humidityChart', {
         labels,
         datasets: [chartDataset('Humidity', forecast.map((day) => numericOrZero(day.humidity)), '#0ea5e9', { fill: true })],
         unit: '%'
     });
+
+    const status = document.getElementById('chartStatus');
+    if (status) status.textContent = `${forecast.length}d trend`;
 }
 
 function getForecastIconClass(icon) {
@@ -2515,6 +2540,11 @@ function getOpenMeteoValue(values, index) {
     return Array.isArray(values) && index < values.length ? values[index] : null;
 }
 
+function multiplyFinite(value, multiplier) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number * multiplier : null;
+}
+
 function averageNumbers(values) {
     const numbers = values.map(Number).filter(Number.isFinite);
     if (!numbers.length) return null;
@@ -2550,7 +2580,7 @@ async function fetchOpenMeteoForecast(lat, lng, signal) {
         latitude: lat,
         longitude: lng,
         current: 'temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,cloud_cover,pressure_msl,wind_speed_10m',
-        hourly: 'temperature_2m,relative_humidity_2m,precipitation_probability,wind_speed_10m,weather_code',
+        hourly: 'temperature_2m,relative_humidity_2m,precipitation_probability,pressure_msl,wind_speed_10m,weather_code',
         daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset',
         forecast_days: '7',
         timezone: 'auto',
@@ -2589,9 +2619,11 @@ function normalizeOpenMeteoWeather(payload, place = {}) {
 function normalizeOpenMeteoHourly(payload) {
     const hourly = payload.hourly || {};
     const times = hourly.time || [];
-    const now = Date.now();
-    const startIndex = Math.max(0, times.findIndex((time) => Date.parse(time) >= now));
-    const first = startIndex === -1 ? 0 : startIndex;
+    const currentTime = payload.current?.time;
+    const startIndex = currentTime
+        ? times.findIndex((time) => String(time) >= String(currentTime))
+        : -1;
+    const first = startIndex >= 0 ? startIndex : 0;
 
     return times.slice(first, first + 24).map((time, offset) => {
         const index = first + offset;
@@ -2601,7 +2633,8 @@ function normalizeOpenMeteoHourly(payload) {
             time,
             temperature: getOpenMeteoValue(hourly.temperature_2m, index),
             rain_chance: getOpenMeteoValue(hourly.precipitation_probability, index),
-            wind_speed: Number(getOpenMeteoValue(hourly.wind_speed_10m, index)) * 3.6,
+            pressure: getOpenMeteoValue(hourly.pressure_msl, index),
+            wind_speed: multiplyFinite(getOpenMeteoValue(hourly.wind_speed_10m, index), 3.6),
             humidity: getOpenMeteoValue(hourly.relative_humidity_2m, index),
             weather_code: getOpenMeteoValue(hourly.weather_code, index),
             description: condition.description,
@@ -2628,7 +2661,7 @@ function normalizeOpenMeteoDaily(payload) {
             high,
             low,
             rain_chance: getOpenMeteoValue(daily.precipitation_probability_max, index),
-            wind_speed: Number(getOpenMeteoValue(daily.wind_speed_10m_max, index)) * 3.6,
+            wind_speed: multiplyFinite(getOpenMeteoValue(daily.wind_speed_10m_max, index), 3.6),
             humidity: averageNumbers(humidityValues),
             weather_code: getOpenMeteoValue(daily.weather_code, index),
             description: condition.description,
@@ -2841,40 +2874,75 @@ async function fetchWeather() {
     }
 }
 
-function useCurrentLocation() {
-    lazyInitializeMap().finally(() => {
-        ensureMap();
-        runCurrentLocationLookup();
-    });
+function setCurrentLocationButtonLoading(isLoading) {
+    if (!useCurrentLocationEl) return;
+
+    if (!useCurrentLocationEl.dataset.defaultLabel) {
+        useCurrentLocationEl.dataset.defaultLabel = useCurrentLocationEl.textContent || 'Use Current Location';
+    }
+
+    useCurrentLocationEl.disabled = isLoading;
+    useCurrentLocationEl.textContent = isLoading ? 'Locating...' : useCurrentLocationEl.dataset.defaultLabel;
 }
 
-function runCurrentLocationLookup() {
+function getGeolocationErrorMessage(error) {
+    if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+        return 'Current location needs HTTPS. Open the deployed GitHub Pages URL with https://.';
+    }
 
+    if (error?.code === 1) return 'Location permission was blocked. Allow location access in your browser, then try again.';
+    if (error?.code === 2) return 'Your browser could not determine your location. Check location services and try again.';
+    if (error?.code === 3) return 'Location lookup timed out. Try again, or search your city manually.';
+
+    return error?.message || 'Could not access your location.';
+}
+
+function updateCurrentLocationMap(latitude, longitude) {
+    lazyInitializeMap()
+        .then(() => {
+            setCurrentLocationMarker(latitude, longitude);
+            setMarker(latitude, longitude, 'Current location', {
+                type: 'current',
+                subtitle: 'Live weather for your location',
+                zoom: 14
+            });
+        })
+        .catch((error) => {
+            if (placesEl) placesEl.innerHTML = `<div class="map-error">${escapeHtml(error.message || 'Map failed to load.')}</div>`;
+        });
+}
+
+function useCurrentLocation() {
     if (!navigator.geolocation) {
         if (placesEl) placesEl.innerHTML = '<div class="map-error">Geolocation is not supported in this browser.</div>';
         return;
     }
 
-    if (useCurrentLocationEl) useCurrentLocationEl.disabled = true;
+    if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+        if (placesEl) placesEl.innerHTML = '<div class="map-error">Current location needs HTTPS. Open the deployed GitHub Pages URL with https://.</div>';
+        return;
+    }
+
+    setCurrentLocationButtonLoading(true);
+    if (placesEl) placesEl.innerHTML = '<div class="map-loading">Finding your location...</div>';
 
     navigator.geolocation.getCurrentPosition(
         (pos) => {
             const { latitude, longitude } = pos.coords;
-            setCurrentLocationMarker(latitude, longitude);
-            setMarker(latitude, longitude, 'Current location', {
-                type: 'current',
-                subtitle: 'Fetching live weather...',
-                zoom: 14
-            });
+            updateCurrentLocationMap(latitude, longitude);
             fetchWeatherByCoords(latitude, longitude, 'Current location');
-            if (placesEl) placesEl.innerHTML = '';
-            if (useCurrentLocationEl) useCurrentLocationEl.disabled = false;
+            if (placesEl) placesEl.innerHTML = '<div class="map-loading">Location found. Loading weather...</div>';
+            setCurrentLocationButtonLoading(false);
         },
         (err) => {
-            if (placesEl) placesEl.innerHTML = `<div class="map-error">Could not access location: ${escapeHtml(err.message)}</div>`;
-            if (useCurrentLocationEl) useCurrentLocationEl.disabled = false;
+            if (placesEl) placesEl.innerHTML = `<div class="map-error">${escapeHtml(getGeolocationErrorMessage(err))}</div>`;
+            setCurrentLocationButtonLoading(false);
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        {
+            enableHighAccuracy: false,
+            timeout: 20000,
+            maximumAge: 300000
+        }
     );
 }
 
