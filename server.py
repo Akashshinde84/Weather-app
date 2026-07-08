@@ -16,29 +16,29 @@ from auth import create_auth_blueprint
 from database import get_database
 from user_api import create_user_data_blueprint
 
-# --- Persist API keys for the lifetime of the process ("permanent" in production runtime) ---
-# Note: API keys should NOT be exposed to the browser.
-# This prevents accidental missing/changed env vars during runtime reloads.
-_PERSISTED_API_KEYS: dict[str, str | None] = {
-    # Default keys (fallback) are provided to keep the app working even if env vars are not set.
-    # Replace these defaults with your real keys in production.
-    "OPENWEATHER_API_KEY": os.environ.get("OPENWEATHER_API_KEY") or "7f7409ad874d1453037f114e7efacbfb",
-    # Default SerpAPI key fallback
-    "SERPAPI_KEY": os.environ.get("SERPAPI_KEY") or "2d2d1de4f4082e7f96dde73597529d667756641559c4e91caaaf957e2738bad6",
-    # Gemini API key
-    "GEMINI_API_KEY": os.environ.get("GEMINI_API_KEY"),
+# --- Server-side API key config ---
+# Keep API keys in .env so the app reconnects after every restart without exposing
+# secrets to the browser or committing them to source control.
+_PERSISTED_API_KEYS: dict[str, str | None] = {}
+_API_KEY_PLACEHOLDERS = {
+    "",
+    "your-key",
+    "your_openweather_api_key",
+    "your_serpapi_key",
+    "your_gemini_api_key",
 }
 
 
 def _get_persisted_api_key(name: str) -> str | None:
-    # Allow late loading (e.g., if env vars were set after import).
-    # We keep the first seen value as "permanent" for the process.
-    existing = _PERSISTED_API_KEYS.get(name)
-    if existing:
-        return existing
-    value = os.environ.get(name)
-    _PERSISTED_API_KEYS[name] = value
-    return value
+    if name in _PERSISTED_API_KEYS:
+        return _PERSISTED_API_KEYS[name]
+
+    value = (os.environ.get(name) or "").strip()
+    if value.lower() in _API_KEY_PLACEHOLDERS:
+        value = ""
+
+    _PERSISTED_API_KEYS[name] = value or None
+    return _PERSISTED_API_KEYS[name]
 
 
 
