@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'weather-app-v2';
+const CACHE_VERSION = 'weather-app-v3';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const API_CACHE = `${CACHE_VERSION}-api`;
@@ -18,17 +18,22 @@ const APP_SHELL = [
     '/static/icons/icon-maskable.svg'
 ];
 
-const API_PREFIXES = [
+const PUBLIC_API_PREFIXES = [
     '/api/weather',
     '/api/hourly-forecast',
     '/api/daily-forecast',
+    '/api/maps-search',
+    '/api/radar-frames',
+    '/api/weather-tile'
+];
+
+const PRIVATE_API_PREFIXES = [
     '/api/favorites',
     '/api/search-history',
     '/api/weather-history',
     '/api/settings',
-    '/api/auth/me',
-    '/api/users/me',
-    '/api/radar-frames'
+    '/api/users/',
+    '/api/auth/'
 ];
 
 self.addEventListener('install', (event) => {
@@ -51,8 +56,12 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-function isApiRequest(url) {
-    return API_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
+function isPublicApiRequest(url) {
+    return PUBLIC_API_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
+}
+
+function isPrivateApiRequest(url) {
+    return PRIVATE_API_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
 }
 
 function isStaticAsset(url) {
@@ -133,7 +142,12 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    if (isApiRequest(url)) {
+    if (isPrivateApiRequest(url)) {
+        event.respondWith(fetch(request));
+        return;
+    }
+
+    if (isPublicApiRequest(url)) {
         event.respondWith(networkFirst(request, API_CACHE));
         return;
     }

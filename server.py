@@ -6,11 +6,34 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import requests
+from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
+
+load_dotenv()
 
 from auth import create_auth_blueprint
 from database import get_database
 from user_api import create_user_data_blueprint
+
+# --- Persist API keys for the lifetime of the process ("permanent" in production runtime) ---
+# Note: API keys should NOT be exposed to the browser.
+# This prevents accidental missing/changed env vars during runtime reloads.
+_PERSISTED_API_KEYS: dict[str, str | None] = {
+    "OPENWEATHER_API_KEY": os.environ.get("OPENWEATHER_API_KEY"),
+    "SERPAPI_KEY": os.environ.get("SERPAPI_KEY"),
+}
+
+
+def _get_persisted_api_key(name: str) -> str | None:
+    # Allow late loading (e.g., if env vars were set after import).
+    # We keep the first seen value as "permanent" for the process.
+    existing = _PERSISTED_API_KEYS.get(name)
+    if existing:
+        return existing
+    value = os.environ.get(name)
+    _PERSISTED_API_KEYS[name] = value
+    return value
+
 
 
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
@@ -125,7 +148,7 @@ def create_app() -> Flask:
         if params is None:
             return jsonify({"error": "Provide either city or lat/lng."}), 400
 
-        api_key = os.environ.get("OPENWEATHER_API_KEY")
+        api_key = _get_persisted_api_key("OPENWEATHER_API_KEY")
         if not api_key:
             return jsonify({"error": "OPENWEATHER_API_KEY is not configured on the server."}), 500
 
@@ -154,7 +177,7 @@ def create_app() -> Flask:
         if not q:
             return jsonify({"error": "Missing query parameter: q"}), 400
 
-        api_key = os.environ.get("SERPAPI_KEY")
+        api_key = _get_persisted_api_key("SERPAPI_KEY")
         if not api_key:
             return jsonify({"error": "SERPAPI_KEY is not configured on the server."}), 500
 
@@ -234,7 +257,7 @@ def create_app() -> Flask:
         if tile_layer is None:
             return jsonify({"error": "Unknown radar layer."}), 404
 
-        api_key = os.environ.get("OPENWEATHER_API_KEY")
+        api_key = _get_persisted_api_key("OPENWEATHER_API_KEY")
         if not api_key:
             return jsonify({"error": "OPENWEATHER_API_KEY is not configured on the server."}), 500
 
