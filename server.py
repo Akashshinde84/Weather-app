@@ -19,8 +19,11 @@ from user_api import create_user_data_blueprint
 # Note: API keys should NOT be exposed to the browser.
 # This prevents accidental missing/changed env vars during runtime reloads.
 _PERSISTED_API_KEYS: dict[str, str | None] = {
-    "OPENWEATHER_API_KEY": os.environ.get("OPENWEATHER_API_KEY"),
-    "SERPAPI_KEY": os.environ.get("SERPAPI_KEY"),
+    # Default keys (fallback) are provided to keep the app working even if env vars are not set.
+    # Replace these defaults with your real keys in production.
+    "OPENWEATHER_API_KEY": os.environ.get("OPENWEATHER_API_KEY") or "7f7409ad874d1453037f114e7efacbfb",
+    # Default SerpAPI key fallback
+    "SERPAPI_KEY": os.environ.get("SERPAPI_KEY") or "2d2d1de4f4082e7f96dde73597529d667756641559c4e91caaaf957e2738bad6",
 }
 
 
