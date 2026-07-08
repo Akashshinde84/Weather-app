@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,8 @@ _PERSISTED_API_KEYS: dict[str, str | None] = {
     "OPENWEATHER_API_KEY": os.environ.get("OPENWEATHER_API_KEY") or "7f7409ad874d1453037f114e7efacbfb",
     # Default SerpAPI key fallback
     "SERPAPI_KEY": os.environ.get("SERPAPI_KEY") or "2d2d1de4f4082e7f96dde73597529d667756641559c4e91caaaf957e2738bad6",
+    # Gemini API key
+    "GEMINI_API_KEY": os.environ.get("GEMINI_API_KEY"),
 }
 
 
@@ -240,6 +243,166 @@ def create_app() -> Flask:
             return jsonify({"forecast": _normalize_daily_forecast(payload)})
         except requests.RequestException:
             return jsonify({"error": "7-day forecast service is currently unavailable."}), 502
+
+    @app.get("/api/weather-insights")
+    def weather_insights():
+        city = (request.args.get("city") or "").strip()
+        lat = request.args.get("lat")
+        lng = request.args.get("lng")
+
+        # 1. Check Gemini API key is configured
+        gemini_key = _get_persisted_api_key("GEMINI_API_KEY")
+        if not gemini_key:
+            return jsonify({"error": "GEMINI_API_KEY is not configured on the server."}), 503
+
+        # 2. Get weather parameters and fetch/cache data
+        params = _build_weather_params(city=city, lat=lat, lng=lng)
+        if params is None:
+            return jsonify({"error": "Provide either city or lat/lng."}), 400
+
+        api_key = _get_persisted_api_key("OPENWEATHER_API_KEY")
+        if not api_key:
+            return jsonify({"error": "OPENWEATHER_API_KEY is not configured on the server."}), 500
+
+        params["appid"] = api_key
+        params["units"] = "metric"
+
+        try:
+            weather_data = _cached_get(OPENWEATHER_URL, params)
+            normalized_weather = _normalize_weather(weather_data)
+
+            lat_val = normalized_weather.get("lat")
+            lng_val = normalized_weather.get("lng")
+            if lat_val is None or lng_val is None:
+                return jsonify({"error": "Could not determine coordinates for weather insights."}), 400
+
+            # Get Air Quality
+            air_quality = _fetch_air_quality(lat=lat_val, lng=lng_val, api_key=api_key)
+            normalized_weather["air_quality"] = air_quality
+
+            # Get Hourly Forecast
+            hourly_params = {
+                "latitude": str(lat_val),
+                "longitude": str(lng_val),
+                "hourly": "temperature_2m,precipitation_probability,wind_speed_10m,weather_code",
+                "forecast_days": "2",
+                "timezone": "auto",
+            }
+            hourly_data = _cached_get(OPEN_METEO_FORECAST_URL, hourly_params)
+            normalized_hourly = _normalize_hourly_forecast(hourly_data)
+
+            # Get Daily Forecast
+            daily_params = {
+                "latitude": str(lat_val),
+                "longitude": str(lng_val),
+                "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max",
+                "hourly": "relative_humidity_2m",
+                "forecast_days": "7",
+                "timezone": "auto",
+            }
+            daily_data = _cached_get(OPEN_METEO_FORECAST_URL, daily_params)
+            normalized_daily = _normalize_daily_forecast(daily_data)
+        except requests.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response is not None else 502
+            return jsonify({"error": f"Failed to fetch weather/forecast data: {exc}"}), status_code
+        except requests.RequestException as exc:
+            return jsonify({"error": f"Weather services unavailable: {exc}"}), 502
+
+        # 3. Call Gemini API
+        context = {
+            "current_weather": {
+                "name": normalized_weather.get("name"),
+                "country": normalized_weather.get("country"),
+                "temperature_c": normalized_weather.get("temperature"),
+                "feels_like_c": normalized_weather.get("feels_like"),
+                "humidity_pct": normalized_weather.get("humidity"),
+                "wind_speed_ms": normalized_weather.get("wind_speed"),
+                "description": normalized_weather.get("description"),
+                "clouds_pct": normalized_weather.get("clouds"),
+                "air_quality": normalized_weather.get("air_quality")
+            },
+            "hourly_forecast_24h": [
+                {
+                    "time": h.get("time"),
+                    "temp_c": h.get("temperature"),
+                    "rain_chance_pct": h.get("rain_chance"),
+                    "wind_speed_kmh": h.get("wind_speed"),
+                    "description": h.get("description")
+                }
+                for h in normalized_hourly
+            ],
+            "daily_forecast_7d": [
+                {
+                    "date": d.get("date"),
+                    "temp_avg_c": d.get("temperature"),
+                    "high_c": d.get("high"),
+                    "low_c": d.get("low"),
+                    "rain_chance_pct": d.get("rain_chance"),
+                    "wind_speed_max_kmh": d.get("wind_speed"),
+                    "humidity_avg_pct": d.get("humidity"),
+                    "description": d.get("description")
+                }
+                for d in normalized_daily
+            ]
+        }
+
+        prompt = f"""
+You are an expert meteorological AI assistant. Analyze the following weather and forecast data and generate natural language summaries and guides.
+You MUST output your response in strict JSON format matching the schema below. Do NOT output any markdown code blocks or wrapper text around the JSON.
+
+Weather Data:
+{json.dumps(context)}
+
+Expected JSON Schema:
+{{
+  "ai_summary": {{
+    "narrative": "A natural-language cohesive paragraph (2-3 sentences) summarizing today's weather in the city, highlights of hourly changes, and basic comfort/travel theme.",
+    "today": "A sentence summarizing today's conditions, high/low, and general trend.",
+    "travel": "A sentence about travel impact and timing recommendations.",
+    "clothing": "A sentence about clothing and layering recommendations based on temperature and wind.",
+    "outdoor": "A sentence about outdoor plan suitability and comfort level.",
+    "driving": "A sentence about road safety, visibility, and vehicle precaution tips.",
+    "workout": "A sentence about exercise location, timing, and intensity suggestions."
+  }},
+  "travel_guide": {{
+    "bestTime": "Recommended hours or times of day to travel or sightsee.",
+    "packing": ["Item 1", "Item 2", "Item 3", "Item 4"],
+    "tourist": "Suggestions for sightseeing or local spots suitable for today's conditions.",
+    "weatherTips": ["Tip 1", "Tip 2", "Tip 3"],
+    "roadCondition": "Summary of pavement, traffic hazards, or potential delays.",
+    "roadLevel": "good|wet|caution|hazardous"
+  }},
+  "farming_guide": {{
+    "cropRecommendation": ["Crop 1", "Crop 2", "Crop 3"],
+    "soilMoistureScore": 75,
+    "soilMoistureLevel": "low|moderate|high",
+    "soilMoisture": "Analysis of soil hydration based on recent/upcoming rain and temperature.",
+    "rainPrediction": "Probability and timing of rain affecting farming work.",
+    "irrigation": "Watering advice (e.g. suspend watering, schedule extra, standard).",
+    "harvest": "Harvest or planting recommendation based on weather."
+  }}
+}}
+"""
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+        payload = {
+            "contents": [
+                {
+                    "parts": [{"text": prompt}]
+                }
+            ],
+            "generationConfig": {
+                "responseMimeType": "application/json"
+            }
+        }
+
+        try:
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=REQUEST_TIMEOUT_SECONDS)
+            res.raise_for_status()
+            text_resp = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+            return Response(text_resp, mimetype="application/json")
+        except Exception as exc:
+            return jsonify({"error": f"Failed to query Gemini API: {exc}"}), 502
 
     @app.get("/api/radar-frames")
     def radar_frames():

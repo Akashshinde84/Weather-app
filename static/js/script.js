@@ -35,6 +35,7 @@ let currentSuggestions = [];
 let currentWeatherData = null;
 let currentHourlyForecast = [];
 let currentDailyForecast = [];
+let usingRealAiInsights = false;
 let radarLayer;
 let activeRadarLayer = 'rain';
 let radarAnimationEnabled = true;
@@ -1804,6 +1805,7 @@ function renderAiSummarySection(summary, state = 'ready') {
 }
 
 function updateAiSummary() {
+    if (usingRealAiInsights) return;
     if (!currentWeatherData) return;
 
     const summary = generateAiSummary(currentWeatherData, currentHourlyForecast, currentDailyForecast);
@@ -2043,6 +2045,7 @@ function renderTravelSection(travel) {
 }
 
 function updateTravelSection() {
+    if (usingRealAiInsights) return;
     if (!currentWeatherData) return;
 
     const travel = generateTravelGuide(currentWeatherData, currentHourlyForecast, currentDailyForecast);
@@ -2255,6 +2258,7 @@ function renderFarmingSection(farming) {
 }
 
 function updateFarmingSection() {
+    if (usingRealAiInsights) return;
     if (!currentWeatherData) return;
 
     const farming = generateFarmingGuide(currentWeatherData, currentHourlyForecast, currentDailyForecast);
@@ -2560,6 +2564,7 @@ async function fetchWeatherFromApi(params, label) {
 
     try {
         setLoading(true);
+        usingRealAiInsights = false; // Reset the AI insights flag
         currentHourlyForecast = [];
         currentDailyForecast = [];
 
@@ -2571,6 +2576,8 @@ async function fetchWeatherFromApi(params, label) {
         if (data.weather?.lat != null && data.weather?.lng != null) {
             fetchHourlyForecast(data.weather.lat, data.weather.lng);
             fetchDailyForecast(data.weather.lat, data.weather.lng);
+            const city = params.get('city') || data.weather.name;
+            fetchWeatherInsights(city, data.weather.lat, data.weather.lng);
         }
         if (window.UserData?.isLoggedIn()) {
             window.UserData.recordWeatherHistory(data.weather?.name || label, data.weather);
@@ -2817,3 +2824,91 @@ window.addEventListener('unhandledrejection', (event) => {
 window.addEventListener('error', (event) => {
     console.error('Unhandled error:', event.error || event.message);
 });
+
+async function fetchWeatherInsights(city, lat, lng) {
+    const params = new URLSearchParams();
+    if (city) params.set('city', city);
+    if (lat != null && lng != null) {
+        params.set('lat', lat);
+        params.set('lng', lng);
+    }
+
+    const aiSummaryStatus = document.getElementById('aiSummaryStatus');
+    const travelStatus = document.getElementById('travelStatus');
+    const farmingStatus = document.getElementById('farmingStatus');
+
+    if (aiSummaryStatus) aiSummaryStatus.textContent = 'Generating AI summaries...';
+    if (travelStatus) travelStatus.textContent = 'Generating AI suggestions...';
+    if (farmingStatus) farmingStatus.textContent = 'Generating AI advice...';
+
+    const aiGrid = document.getElementById('aiSummaryGrid');
+    const travelGrid = document.getElementById('travelGrid');
+    const farmingGrid = document.getElementById('farmingGrid');
+    if (aiGrid) aiGrid.classList.add('is-loading');
+    if (travelGrid) travelGrid.classList.add('is-loading');
+    if (farmingGrid) farmingGrid.classList.add('is-loading');
+
+    try {
+        const insights = await fetchJson(`/api/weather-insights?${params.toString()}`);
+        if (insights && !insights.error) {
+            usingRealAiInsights = true;
+            renderRealInsights(insights);
+        } else {
+            throw new Error(insights?.error || 'Gemini response empty');
+        }
+    } catch (err) {
+        console.warn('Gemini API fallback to local calculations:', err.message);
+        usingRealAiInsights = false;
+        fallbackToLocalInsights();
+    } finally {
+        if (aiGrid) aiGrid.classList.remove('is-loading');
+        if (travelGrid) travelGrid.classList.remove('is-loading');
+        if (farmingGrid) farmingGrid.classList.remove('is-loading');
+    }
+}
+
+function renderRealInsights(insights) {
+    // 1. AI Summary
+    const summary = insights.ai_summary;
+    const narrative = document.getElementById('aiSummaryNarrative');
+    const aiGrid = document.getElementById('aiSummaryGrid');
+    const aiStatus = document.getElementById('aiSummaryStatus');
+
+    if (summary) {
+        if (narrative) narrative.textContent = summary.narrative;
+        if (aiGrid) {
+            aiGrid.innerHTML = AI_SUMMARY_ITEMS.map((item) => renderAiSummaryCard(item, summary[item.id])).join('');
+        }
+        if (aiStatus) aiStatus.textContent = 'AI Live';
+    }
+
+    // 2. Travel Guide
+    const travel = insights.travel_guide;
+    const travelGrid = document.getElementById('travelGrid');
+    const travelStatus = document.getElementById('travelStatus');
+
+    if (travel) {
+        if (travelGrid) {
+            travelGrid.innerHTML = TRAVEL_SECTION_ITEMS.map((item) => renderTravelCard(item, travel)).join('');
+        }
+        if (travelStatus) travelStatus.textContent = 'AI Live';
+    }
+
+    // 3. Farming Guide
+    const farming = insights.farming_guide;
+    const farmingGrid = document.getElementById('farmingGrid');
+    const farmingStatus = document.getElementById('farmingStatus');
+
+    if (farming) {
+        if (farmingGrid) {
+            farmingGrid.innerHTML = FARMING_SECTION_ITEMS.map((item) => renderFarmingCard(item, farming)).join('');
+        }
+        if (farmingStatus) farmingStatus.textContent = 'AI Live';
+    }
+}
+
+function fallbackToLocalInsights() {
+    updateAiSummary();
+    updateTravelSection();
+    updateFarmingSection();
+}
